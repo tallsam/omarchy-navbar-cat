@@ -320,6 +320,7 @@ Item {
     var now = Date.now()
     var maxPos = Math.max(0, barLength - catSize)
     var onBar = pointerOnBar()
+    yarn.step(now)
 
     // Drop the cat somewhere arbitrary the first time we know how long the bar
     // is. Starting at zero every session meant that on a machine left plugged
@@ -338,6 +339,7 @@ Item {
       catSize: catSize,
       x: catPos,
       pointer: onBar ? { onBar: true, pos: pointerAlongBar() } : null,
+      toy: yarn.active ? { active: true, pos: yarn.targetCentre } : null,
       pettedAt: pettedAt >= 0 ? pettedAt : null,
       lastPointerMoveAt: lastPointerMoveAt,
       music: musicPlaying,
@@ -381,6 +383,7 @@ Item {
       }
     }
     catPos = Math.max(0, Math.min(maxPos, catPos))
+    if (decision.toyHit) yarn.hit(now)
 
     catPose = decision.pose
     catBob = decision.bob
@@ -504,6 +507,29 @@ Item {
       y: root.maskActive ? Math.round(sprite.y) : 0
       width: root.maskActive ? sprite.width : 0
       height: root.maskActive ? sprite.height : 0
+    }
+
+    Yarn {
+      id: yarn
+      playEnabled: root.reactions.yarn !== false
+      blocked: root.barHidden || catMenu.open
+      brainState: root.brainState
+      barLength: root.barLength
+      catPos: root.catPos
+      catSize: root.catSize
+      lastDir: root.brainState.lastDir
+      tickMs: root.tickMs
+      vertical: root.vertical
+      headroom: root.headroom
+      inwardSign: root.inwardSign
+      stripCentre: window.stripCentre
+      fillColor: Color.bar.text
+      inkColor: Color.bar.background
+      onWakeRequested: root.nudge()
+      onPleased: function (at) {
+        root.pettedAt = at
+        root.nudge()
+      }
     }
 
     CatSprite {

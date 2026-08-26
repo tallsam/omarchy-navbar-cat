@@ -15,7 +15,8 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = readFileSync(join(REPO, "Brain.js"), "utf8");
 const Brain = new Function(
   `${source}\nreturn { decide, freshState, pickSpot, CHAIN, PET_MS, PET_PERK_MS,`
-    + ` AWAKE_MS, SCAMPER_MS, POUNCE_MS, POUNCE_COOLDOWN_MS, NOTIFY_MS, rhythmFor };`,
+    + ` AWAKE_MS, SCAMPER_MS, POUNCE_MS, POUNCE_COOLDOWN_MS, NOTIFY_MS, rhythmFor,`
+    + ` toyMotion, toyGameLength, nextToyBat };`,
 )();
 
 // The middle of the bar, in cat-position terms, and the default keep-clear
@@ -63,6 +64,7 @@ function input(overrides = {}) {
     catSize: CAT,
     x: 500,
     pointer: null,
+    toy: null,
     pettedAt: null,
     lastPointerMoveAt: 10_000,
     music: false,
@@ -82,19 +84,19 @@ function decide(overrides, state = Brain.freshState()) {
   return Brain.decide(input(overrides), state);
 }
 
-test("rung 7: with nothing happening the cat wanders", () => {
+test("with nothing happening the cat wanders", () => {
   const out = decide({});
   assert.equal(out.reason, "wander");
 });
 
-test("rung 7: a wander target stays put across ticks until reached", () => {
+test("a wander target stays put across ticks until reached", () => {
   let state = Brain.freshState();
   const first = Brain.decide(input({}), state);
   const second = Brain.decide(input({ now: 10_100 }), first.state);
   assert.equal(first.target, second.target, "cat should not re-roll its target every tick");
 });
 
-test("rung 6: no pointer movement past sleepAfter puts the cat to sleep", () => {
+test("no pointer movement past sleepAfter puts the cat to sleep", () => {
   // Far past the threshold and standing on its target, so the idle chain has
   // had time to run all the way down to sleep.
   let state = Brain.freshState();
@@ -115,7 +117,7 @@ test("rung 6: no pointer movement past sleepAfter puts the cat to sleep", () => 
   assert.equal(out.reason, "idle-sleep");
 });
 
-test("rung 6: the idle chain runs stop -> wash -> scratch -> yawn -> sleep", () => {
+test("the idle chain runs stop -> wash -> scratch -> yawn -> sleep", () => {
   // Faithful to oneko's own progression (oneko.c:1107 onward).
   const seen = [];
   let state = Brain.freshState();
@@ -135,7 +137,7 @@ test("rung 6: the idle chain runs stop -> wash -> scratch -> yawn -> sleep", () 
   assert.deepEqual(seen, ["stop", "wash", "scratch", "yawn", "sleep"]);
 });
 
-test("rung 4: music makes the cat dance where it already is", () => {
+test("music makes the cat dance where it already is", () => {
   // It used to walk to the centre of the bar to dance, which is exactly where
   // most people's clock sits.
   for (const x of [80, 400, BAR - CAT]) {
@@ -147,7 +149,7 @@ test("rung 4: music makes the cat dance where it already is", () => {
   }
 });
 
-test("rung 4: music is ignored when its reaction is switched off", () => {
+test("music is ignored when its reaction is switched off", () => {
   const out = decide({
     music: true,
     config: { ...input().config, reactions: { music: false, charging: true, workspace: true } },
@@ -155,7 +157,7 @@ test("rung 4: music is ignored when its reaction is switched off", () => {
   assert.equal(out.reason, "wander");
 });
 
-test("rung 4: charging makes the cat sleepy where it stands", () => {
+test("charging makes the cat sleepy where it stands", () => {
   // It used to be marched to the right third to "nap by the power widget".
   // A cat sleeps where it is, and being summoned to a fixed spot meant it
   // always slept in the same place and trudged back there after every stir.
@@ -194,7 +196,7 @@ test("waking reactions all beat charging", () => {
   }
 });
 
-test("rung 4: a charging cat eventually naps, right where it was", () => {
+test("a charging cat eventually naps, right where it was", () => {
   const chainTotal = Brain.CHAIN.reduce(
     (sum, step) => sum + (Number.isFinite(step.ms) ? step.ms : 0),
     0,
@@ -209,7 +211,7 @@ test("rung 4: a charging cat eventually naps, right where it was", () => {
   assert.equal(out.target, 100, "and sleeps where it already was");
 });
 
-test("rung 3: a workspace switch scampers the cat that way", () => {
+test("a workspace switch scampers the cat that way", () => {
   const right = decide({ workspaceEvent: { at: 9_800, dir: 1 }, x: 500 });
   assert.equal(right.reason, "workspace");
   assert.ok(right.target > 500, "switching right should send the cat right");
@@ -219,17 +221,17 @@ test("rung 3: a workspace switch scampers the cat that way", () => {
   assert.ok(left.target < 500, "switching left should send the cat left");
 });
 
-test("rung 3: a stale workspace switch stops mattering", () => {
+test("a stale workspace switch stops mattering", () => {
   const out = decide({ workspaceEvent: { at: 1_000, dir: 1 } });
   assert.equal(out.reason, "wander");
 });
 
-test("rung 3: a scamper cannot leave the bar", () => {
+test("a scamper cannot leave the bar", () => {
   const out = decide({ workspaceEvent: { at: 9_800, dir: 1 }, x: BAR - CAT - 5 });
   assert.ok(out.target <= BAR - CAT, `target ${out.target} escaped the bar`);
 });
 
-test("rung 2: the cat runs to a pointer on the bar", () => {
+test("the cat runs to a pointer on the bar", () => {
   const out = decide({ pointer: { onBar: true, pos: 900 }, x: 100 });
   assert.equal(out.reason, "chase");
   assert.equal(out.gait, "run");
@@ -237,7 +239,7 @@ test("rung 2: the cat runs to a pointer on the bar", () => {
   assert.ok(Math.abs(out.target - (900 - CAT / 2)) < 1);
 });
 
-test("rung 2: having reached the pointer, the cat sits and waits", () => {
+test("having reached the pointer, the cat sits and waits", () => {
   // Pounce off: arriving at the pointer is also the pounce trigger, and this
   // test is about what the cat does once it has landed and settled.
   const out = decide({
@@ -250,7 +252,7 @@ test("rung 2: having reached the pointer, the cat sits and waits", () => {
   assert.equal(out.pose, "stop", "a waiting cat should not fall asleep on the job");
 });
 
-test("rung 2: chase outranks charging and music", () => {
+test("chase outranks charging and music", () => {
   const out = decide({
     pointer: { onBar: true, pos: 100 },
     charging: true,
@@ -260,7 +262,7 @@ test("rung 2: chase outranks charging and music", () => {
   assert.equal(out.reason, "chase");
 });
 
-test("rung 2: chaseCursor off means the pointer is ignored", () => {
+test("chaseCursor off means the pointer is ignored", () => {
   const out = decide({
     pointer: { onBar: true, pos: 900 },
     config: { ...input().config, chaseCursor: false },
@@ -268,14 +270,14 @@ test("rung 2: chaseCursor off means the pointer is ignored", () => {
   assert.equal(out.reason, "wander");
 });
 
-test("rung 1: a freshly petted cat holds still and looks pleased", () => {
+test("a freshly petted cat holds still and looks pleased", () => {
   const out = decide({ pettedAt: 9_500, x: 400 });
   assert.equal(out.reason, "petted");
   assert.equal(out.gait, "idle");
   assert.equal(out.target, 400, "a petted cat should not wander off");
 });
 
-test("rung 1: petting gets an acknowledgement before the grooming", () => {
+test("petting gets an acknowledgement before the grooming", () => {
   // Clicking and being met instantly with face-washing reads as the cat
   // ignoring you. It should look up first, then settle into grooming.
   const now = 10_000;
@@ -289,12 +291,12 @@ test("rung 1: petting gets an acknowledgement before the grooming", () => {
   assert.notEqual(done.reason, "petted");
 });
 
-test("rung 1: petting outranks even the pointer", () => {
+test("petting outranks even the pointer", () => {
   const out = decide({ pettedAt: 9_500, pointer: { onBar: true, pos: 900 }, x: 400 });
   assert.equal(out.reason, "petted");
 });
 
-test("rung 1: the pleasure wears off", () => {
+test("the pleasure wears off", () => {
   const out = decide({ pettedAt: 9_500 - Brain.PET_MS - 1, x: 400 });
   assert.notEqual(out.reason, "petted");
 });
@@ -630,6 +632,140 @@ test("pounce: a pouncing cat cannot be clicked and needs ticks", () => {
   const out = Brain.decide(input({ pointer: { onBar: true, pos: 500 }, x: 492 }), start.state);
   assert.equal(out.pettable, false);
   assert.equal(out.idle, false);
+});
+
+test("yarn: an active toy wins the cat's attention even while the pointer is on the bar", () => {
+  const out = decide({
+    x: 100,
+    toy: { active: true, pos: 800 },
+    pointer: { onBar: true, pos: 200 },
+    notifyAt: 9_900,
+    music: true,
+  });
+  assert.equal(out.reason, "toy");
+  assert.equal(out.target, 800 - CAT / 2);
+  assert.equal(out.gait, "run");
+});
+
+test("yarn: petting still wins the cat's attention", () => {
+  const out = decide({
+    pettedAt: 9_900,
+    toy: { active: true, pos: 800 },
+    x: 100,
+  });
+  assert.equal(out.reason, "petted");
+});
+
+test("yarn: catching the ball pounces, then reports one clean hit on landing", () => {
+  const chasing = decide({ x: 300, toy: { active: true, pos: 500 } });
+  let out = Brain.decide(
+    input({ x: 492, toy: { active: true, pos: 500 } }),
+    chasing.state,
+  );
+  assert.equal(out.reason, "pounce");
+  assert.equal(out.toyHit, false);
+
+  out = Brain.decide(
+    input({ now: 10_000 + Brain.POUNCE_MS + 50, x: 492, toy: { active: true, pos: 500 } }),
+    out.state,
+  );
+  assert.equal(out.toyHit, true);
+  assert.equal(out.state.lastPounceAt, null, "yarn should not spend the cursor-pounce cooldown");
+});
+
+test("yarn: disabling pounces still lets the cat bat the ball on the ground", () => {
+  const config = { ...input().config, pounce: false };
+  const out = decide({ x: 492, toy: { active: true, pos: 500 }, config });
+  assert.equal(out.reason, "toy");
+  assert.equal(out.lift, 0);
+  assert.equal(out.toyHit, true);
+});
+
+test("yarn: a bat arcs through the air, lands, then rolls to a stop", () => {
+  const airborne = Brain.toyMotion(0.31);
+  assert.equal(airborne.airborne, true);
+  assert.ok(airborne.lift > 0.7, "the ball should be near the top of its arc");
+
+  const landed = Brain.toyMotion(0.62);
+  assert.equal(landed.airborne, false);
+  assert.equal(landed.lift, 0);
+  assert.equal(landed.along, 0.72);
+
+  const rolling = Brain.toyMotion(0.8);
+  assert.ok(rolling.along > landed.along && rolling.along < 1);
+  assert.deepEqual(Brain.toyMotion(1), { along: 1, lift: 0, airborne: false });
+});
+
+test("yarn: pop and skitter profiles produce different play", () => {
+  const pop = Brain.toyMotion(0.39, 1.05, 0.78, 0.86);
+  assert.equal(pop.airborne, true);
+  assert.ok(pop.lift > 1, "the pop should climb high");
+
+  const skitter = Brain.toyMotion(0.32, 0.25, 0.32, 0.38);
+  assert.deepEqual(skitter, { along: 0.38, lift: 0, airborne: false });
+  assert.ok(pop.along > skitter.along, "the pop carries farther before landing");
+});
+
+test("yarn: games and bats vary while remaining bounded", () => {
+  const state = Brain.freshState(42);
+  const lengths = new Set();
+  const profiles = new Set();
+  for (let i = 0; i < 100; i++) {
+    const length = Brain.toyGameLength(state);
+    lengths.add(length);
+    assert.ok(length >= 4 && length <= 7);
+
+    const bat = Brain.nextToyBat(state, {
+      barLength: BAR, toySize: 7, x: 500, lastDir: i % 2 ? -1 : 1,
+    });
+    profiles.add(bat.profile);
+    assert.ok(bat.target >= 0 && bat.target <= BAR - 7);
+    assert.ok(bat.duration > 0);
+  }
+  assert.deepEqual([...lengths].sort(), [4, 5, 6, 7]);
+  assert.deepEqual([...profiles].sort(), ["fling", "pop", "skitter"]);
+});
+
+test("yarn: seeded play is reproducible but still varies distance and direction", () => {
+  function transcript(seed) {
+    const state = Brain.freshState(seed);
+    return Array.from({ length: 40 }, () => {
+      const bat = Brain.nextToyBat(state, {
+        barLength: BAR, toySize: 7, x: 500, lastDir: 1,
+      });
+      return [bat.profile, Math.round(bat.target * 1000) / 1000, bat.duration];
+    });
+  }
+
+  const first = transcript(42);
+  assert.deepEqual(first, transcript(42));
+  assert.notDeepEqual(first, transcript(43));
+  assert.ok(new Set(first.map((bat) => bat[1])).size > 3, "distance should vary");
+  assert.ok(first.some((bat) => bat[1] < 500), "some bats should reverse left");
+  assert.ok(first.some((bat) => bat[1] > 500), "some bats should continue right");
+});
+
+test("yarn: a bat turns away from a blocked bar edge", () => {
+  const bat = Brain.nextToyBat(Brain.freshState(7), {
+    barLength: BAR, toySize: 7, x: 0, lastDir: -1,
+  });
+  assert.ok(bat.target > 0 && bat.target <= BAR - 7);
+});
+
+test("yarn: bat targets stay finite on both edges and degenerate bars", () => {
+  for (const [barLength, toySize, x, lastDir] of [
+    [BAR, 7, 0, -1],
+    [BAR, 7, BAR - 7, 1],
+    [BAR, 7, -100, -1],
+    [BAR, 7, 5000, 1],
+    [5, 7, 0, 1],
+  ]) {
+    const bat = Brain.nextToyBat(Brain.freshState(17), {
+      barLength, toySize, x, lastDir,
+    });
+    assert.ok(Number.isFinite(bat.target));
+    assert.ok(bat.target >= 0 && bat.target <= Math.max(0, barLength - toySize));
+  }
 });
 
 test("the sleeping cat reports that it needs no ticks", () => {
