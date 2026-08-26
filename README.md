@@ -26,6 +26,7 @@ asleep.
 | It has been asleep a while | gets up, potters about, and settles again |
 | Nothing in particular | wanders, with pauses |
 | You click it | looks up at you, then grooms |
+| Every so often | finds a ball of yarn, pounces, and bats it around |
 
 It walks the long way round on vertical bars too, and claws at the ends of the
 bar when it wants to keep going and can't.
@@ -34,8 +35,8 @@ Those reactions are a priority order, not a list — the first one that applies
 wins. Anything that wakes the cat beats anything that puts it to sleep:
 
 ```
-petted > pointer > startled > notification > music > charging > idle > wander
-└─────────────── awake ──────────────────┘   └────── asleep ──────┘
+petted > yarn > pointer > startled > notification > music > charging > idle > wander
+└────────────────── awake ─────────────────────┘   └────── asleep ──────┘
 ```
 
 So music still gets the cat bobbing while you are on mains power, but moving
@@ -56,14 +57,26 @@ settles and how briskly it moves, using the same frames throughout:
 
 Set `rhythm: false` for a cat that behaves the same at 4am as at 4pm.
 
+## Yarn play
+
+Every few minutes, the cat finds a small ball of yarn and plays through four to
+seven catches. Each bat is independently a high pop, a balanced fling, or a low
+skitter, with varied distance and occasional direction changes. The pixel-art
+ball rolls from distance travelled rather than a timer, then unspools and pools
+its loose end as the game continues.
+
+Yarn is session-only and writes no state. Set `reactions.yarn: false` to disable
+it.
+
 ## Right-click menu
 
 Right-click a **settled** cat to change its character, or toggle pouncing and
 cursor-chasing. A walking cat has no input region to click, which is the same
 rule that governs petting.
 
-Menu choices are written to this plugin's own entry in `shell.json` through the
-shell's own config mechanism, so they survive a restart.
+Character and toggle choices are written to this plugin's own entry in
+`shell.json` through the shell's own config mechanism, so they survive a
+restart. The cat's occasional yarn games are session-only and write nothing.
 
 ## Characters
 
@@ -145,7 +158,7 @@ Settings go inline on the plugin's entry in `~/.config/omarchy/shell.json`:
       "monitor": "focused",
       "reactions": {
         "music": true, "charging": true, "workspace": true,
-        "notification": true, "theme": true
+        "notification": true, "theme": true, "yarn": true
       }
     }
   ]
@@ -166,7 +179,7 @@ Settings go inline on the plugin's entry in `~/.config/omarchy/shell.json`:
 | `stirEvery` | `150` | Roughly how often a sleeping cat gets up, in seconds |
 | `stirFor` | `25` | How long it potters about before settling again |
 | `monitor` | `"focused"` | `"focused"` to follow you, or an output name to pin it |
-| `reactions` | all on | Individually disable the music, charging, workspace, notification, or theme reactions |
+| `reactions` | all on | Individually disable the music, charging, workspace, notification, theme, or yarn reactions |
 
 ### About the pounce
 
@@ -198,8 +211,9 @@ timer, and the pointer sampler slows down to match.
 |---|---|
 | `Cat.qml` | The panel: window, monitor tracking, event sources, tick loop |
 | `CatSprite.qml` | Frame selection, sheet choice, two-tone theming |
+| `Yarn.qml` | Yarn game lifecycle, motion, and pixel-art rendering |
 | `CatMenu.qml` | The right-click menu surface |
-| `Brain.js` | All the behaviour, as a pure function — the tested part |
+| `Brain.js` | Priority and motion decisions as pure, tested functions |
 | `bin/navbar-cat-cursor` | Pointer sampler |
 | `tools/build-sprites.py` | XBM → spritesheets (only needed to change the art) |
 | `tools/build-preview.py` | Renders `preview.png` from the shipped sheets |
@@ -210,6 +224,8 @@ ladder is testable with a fake clock:
 
 ```bash
 node --test "test/*.test.mjs"
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
+  /usr/lib/qt6/bin/qmltestrunner -input test/tst_yarn.qml -import .
 ```
 
 ### Two things worth knowing

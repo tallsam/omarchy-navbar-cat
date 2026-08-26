@@ -71,6 +71,7 @@ function freshState(seed) {
     lastDir: 1,
     pounceStartedAt: null,
     pounceFrom: 0,
+    pounceReason: null,
     lastPounceAt: null,
   }
 }
@@ -86,6 +87,73 @@ function clamp(value, low, high) {
   if (value < low) return low
   if (value > high) return high
   return value
+}
+
+// A bat is a short ballistic hop followed by a friction roll. `along` is the
+// fraction of the throw distance covered; `lift` is normalised off the bar.
+function toyMotion(progress, hop, airEnd, landAt) {
+  var p = Number(progress)
+  if (!isFinite(p)) p = 0
+  p = clamp(p, 0, 1)
+  hop = isFinite(Number(hop)) ? Math.max(0, Number(hop)) : 0.75
+  airEnd = isFinite(Number(airEnd)) ? clamp(Number(airEnd), 0.2, 0.9) : 0.62
+  landAt = isFinite(Number(landAt)) ? clamp(Number(landAt), 0.2, 0.95) : 0.72
+  if (p < airEnd) {
+    var air = p / airEnd
+    return {
+      along: landAt * air,
+      lift: Math.sin(Math.PI * air) * hop,
+      airborne: true,
+    }
+  }
+
+  var ground = (p - airEnd) / (1 - airEnd)
+  return {
+    along: landAt + (1 - landAt) * (1 - Math.pow(1 - ground, 2)),
+    lift: 0,
+    airborne: false,
+  }
+}
+
+var TOY_PROFILES = [
+  { name: "pop", hop: 1.05, airEnd: 0.78, landAt: 0.86, duration: 800, distance: 0.55 },
+  { name: "skitter", hop: 0.25, airEnd: 0.32, landAt: 0.38, duration: 560, distance: 1.15 },
+  { name: "fling", hop: 0.75, airEnd: 0.62, landAt: 0.72, duration: 700, distance: 1 },
+]
+
+function toyGameLength(state) {
+  return 4 + Math.floor(nextRandom(state) * 4)
+}
+
+// Pick one coherent bat. Randomising here — once per hit, from the brain's
+// seeded generator — gives variety without frame-to-frame visual jitter.
+function nextToyBat(state, input) {
+  var maxX = Math.max(0, input.barLength - input.toySize)
+  var x = clamp(input.x, 0, maxX)
+  var direction = input.lastDir < 0 ? -1 : 1
+  if (nextRandom(state) < 0.28) direction = -direction
+
+  var profileRoll = nextRandom(state)
+  var profile = profileRoll < 0.3
+    ? TOY_PROFILES[0] : (profileRoll < 0.6 ? TOY_PROFILES[1] : TOY_PROFILES[2])
+  var distance = Math.min(
+    input.barLength * 0.35,
+    (70 + nextRandom(state) * 170) * profile.distance)
+  var available = direction > 0 ? maxX - x : x
+  if (available < distance * 0.65) {
+    direction = -direction
+    available = direction > 0 ? maxX - x : x
+  }
+  distance = Math.min(distance, Math.max(0, available))
+
+  return {
+    profile: profile.name,
+    target: x + direction * distance,
+    duration: profile.duration,
+    hop: profile.hop,
+    airEnd: profile.airEnd,
+    landAt: profile.landAt,
+  }
 }
 
 // Pick somewhere for the cat to go of its own accord, keeping clear of the
@@ -189,7 +257,18 @@ function intent(input, state) {
     }
   }
 
-  // 2. Pointer on the bar.
+  // 2. A ball of yarn. Once play begins it outranks the pointer, or an ordinary
+  // visit to the bar could interrupt every chase.
+  if (input.toy && input.toy.active) {
+    return {
+      reason: "toy",
+      target: input.toy.pos - input.catSize / 2,
+      gait: "run",
+      rest: "wait",
+    }
+  }
+
+  // 3. Pointer on the bar.
   if (config.chaseCursor !== false && input.pointer && input.pointer.onBar) {
     return {
       reason: "chase",
@@ -199,7 +278,7 @@ function intent(input, state) {
     }
   }
 
-  // 3. Startled — by something you did, or by the world changing colour.
+  // 4. Startled — by something you did, or by the world changing colour.
   //
   //    Both are the same movement: a short bolt and then a wait. They share a
   //    rung rather than getting one each, because two rungs that differ only in
@@ -226,7 +305,7 @@ function intent(input, state) {
     }
   }
 
-  // 4. A notification just arrived. Omarchy anchors toasts to the top right, so
+  // 5. A notification just arrived. Omarchy anchors toasts to the top right, so
   //    the nearest point on the bar is its right end — or its top, when the bar
   //    itself is vertical.
   if (reactions.notification !== false
@@ -275,7 +354,7 @@ function intent(input, state) {
     }
   }
 
-  // 5. Something is playing — dance, wherever the cat happens to be.
+  // 6. Something is playing — dance, wherever the cat happens to be.
   //
   //    This sits above the charging rung, and the ordering matters more than it
   //    looks. Charging is a *sleepy* rung: it returns and the cat nods off. Put
@@ -292,7 +371,7 @@ function intent(input, state) {
     }
   }
 
-  // 6. On AC power — get drowsy, and sleep wherever it happens to be.
+  // 7. On AC power — get drowsy, and sleep wherever it happens to be.
   //
   //    This used to march the cat to the right third of the bar, on the theory
   //    that it was napping by the power widget. In practice it meant the cat
@@ -309,7 +388,7 @@ function intent(input, state) {
     }
   }
 
-  // 7. Nobody has touched the pointer in a long while.
+  // 8. Nobody has touched the pointer in a long while.
   if (now - input.lastPointerMoveAt
       > (config.sleepAfter || 180) * 1000 * rhythm.sleepAfterScale) {
     return {
@@ -321,7 +400,7 @@ function intent(input, state) {
     }
   }
 
-  // 8. Nothing in particular. Wander, and re-roll once the cat has finished
+  // 9. Nothing in particular. Wander, and re-roll once the cat has finished
   //    dawdling wherever it arrived.
   if (state.wanderTarget === null || state.wanderTarget === undefined) {
     state.wanderTarget = pickSpot(state, maxX, input.barLength, config.avoidCenter)
@@ -366,22 +445,28 @@ function decide(input, state) {
   var delta = target - input.x
   var moving = want.gait !== "idle" && Math.abs(delta) > ARRIVE_EPS
 
-  // Reaching the pointer is the cue to pounce at it. Anything else the cat is
-  // doing takes priority, and the cooldown keeps it from turning into a tic.
+  // Reaching the pointer or yarn is the cue to pounce. Yarn ignores the cursor
+  // cooldown: batting a ball several times is one game, not a nervous tic.
   var config = input.config || {}
+  var toyHit = false
   var pouncing = state.pounceStartedAt !== null && state.pounceStartedAt !== undefined
-  if (!pouncing && config.pounce !== false && want.reason === "chase" && !moving
+  var canPounce = want.reason === "toy"
+    || (want.reason === "chase"
       && (state.lastPounceAt === null || state.lastPounceAt === undefined
-          || now - state.lastPounceAt >= POUNCE_COOLDOWN_MS)) {
+        || now - state.lastPounceAt >= POUNCE_COOLDOWN_MS))
+  if (!pouncing && config.pounce !== false && canPounce && !moving) {
     state.pounceStartedAt = now
     state.pounceFrom = input.x
+    state.pounceReason = want.reason
     pouncing = true
   }
   if (pouncing) {
     var progress = (now - state.pounceStartedAt) / POUNCE_MS
     if (progress >= 1) {
+      toyHit = state.pounceReason === "toy"
       state.pounceStartedAt = null
-      state.lastPounceAt = now
+      if (!toyHit) state.lastPounceAt = now
+      state.pounceReason = null
     } else {
       // A half-sine arc: off the ground, over, and back down.
       var leapTarget = clamp(
@@ -399,10 +484,17 @@ function decide(input, state) {
         bob: false,
         pettable: false,
         idle: false,
+        toyHit: false,
         wakeIn: 0,
         state: state,
       }
     }
+  }
+
+  // With pouncing disabled, reaching the yarn is still a successful ground
+  // bat. This honours the setting without making the game unwinnable.
+  if (!pouncing && config.pounce === false && want.reason === "toy" && !moving) {
+    toyHit = true
   }
 
   // A stir schedule belongs to the states that can end in sleep. If the cat is
@@ -425,7 +517,7 @@ function decide(input, state) {
       return {
         reason: want.reason, target: target, gait: "idle", pose: "awake",
         lift: 0, snap: false, bob: false, pettable: false, idle: false,
-        wakeIn: 0, state: state,
+        toyHit: toyHit, wakeIn: 0, state: state,
       }
     } else {
       state.wokeAt = null
@@ -442,7 +534,7 @@ function decide(input, state) {
     return {
       reason: want.reason, target: target, gait: want.gait, pose: state.pose,
       lift: 0, snap: false, bob: false, pettable: false, idle: false,
-      wakeIn: 0, state: state,
+      toyHit: toyHit, wakeIn: 0, state: state,
     }
   }
 
@@ -463,7 +555,7 @@ function decide(input, state) {
     pose = chainPose(elapsed)
     if (!want.sleepy && pose === "sleep") {
       // A cat that is merely idle, not tired, gets bored and moves on rather
-      // than dropping off — sleep is rung 6's job.
+      // than dropping off — the idle-sleep intent owns that.
       state.wanderTarget = null
       state.restKey = null
       state.restStartedAt = null
@@ -499,6 +591,7 @@ function decide(input, state) {
     bob: want.bob === true,
     pettable: config.pettable !== false,
     idle: pose === "sleep",
+    toyHit: toyHit,
     // How long the body may stop ticking for. Only meaningful while asleep.
     wakeIn: pose === "sleep" ? Math.max(0, state.nextStirAt - now) : 0,
     state: state,
