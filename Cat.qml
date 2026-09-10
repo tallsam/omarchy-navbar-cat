@@ -30,13 +30,20 @@ Item {
   property string omarchyPath: ""
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "io.github.tallsam.navbar-cat"
+  readonly property string pluginDir: {
+    // Third-party manifests do not expose the host's private source directory
+    // (Omarchy 4.0.3 sanitizes it), so derive it from this file.
+    var sourceUrl = String(Qt.resolvedUrl("./"))
+    return sourceUrl.indexOf("file://") === 0
+      ? decodeURIComponent(sourceUrl.slice(7)).replace(/\/$/, "") : ""
+  }
   readonly property string assetDir: {
-    var dir = manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : ""
+    var dir = root.pluginDir
     if (dir === "") return ""
     return (dir.indexOf("file://") === 0 ? dir : "file://" + dir) + "/assets"
   }
   readonly property string helper: {
-    var dir = manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : ""
+    var dir = root.pluginDir
     if (dir === "") return ""
     return dir.replace(/^file:\/\//, "") + "/bin/navbar-cat-cursor"
   }
@@ -52,8 +59,26 @@ Item {
 
   // Settings live inline on this plugin's entry in shell.json's `plugins[]`,
   // per the shell's storage rules.
+  FileView {
+    id: userShellConfig
+    // Omarchy 4.0.3 hands plugins a scoped shell facade without shellConfig,
+    // so read the canonical user file directly when the host does not hand
+    // the config object over.
+    path: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: root.configRevision++
+  }
+  property int configRevision: 0
   readonly property var config: {
+    var revision = root.configRevision  // binding dependency: user file reloads
     var settings = shell && shell.shellConfig ? shell.shellConfig.plugins : null
+    if (!Array.isArray(settings)) {
+      try {
+        var parsed = JSON.parse(String(userShellConfig.text() || "{}"))
+        settings = parsed && Array.isArray(parsed.plugins) ? parsed.plugins : null
+      } catch (e) { settings = null }
+    }
     if (Array.isArray(settings)) {
       for (var i = 0; i < settings.length; i++) {
         if (settings[i] && String(settings[i].id || "") === root.pluginId) return settings[i]
@@ -431,23 +456,14 @@ Item {
   // own entry in shell.json, only when you pick something, and it goes through
   // the shell's own mutator rather than editing the file behind its back.
   function setSetting(key, value) {
-    if (!shell || typeof shell.mutateShellConfig !== "function") return
-    var id = root.pluginId
-    shell.mutateShellConfig(function (cfg) {
-      if (!Array.isArray(cfg.plugins)) cfg.plugins = []
-      var entry = null
-      for (var i = 0; i < cfg.plugins.length; i++) {
-        if (cfg.plugins[i] && String(cfg.plugins[i].id || "") === id) {
-          entry = cfg.plugins[i]
-          break
-        }
-      }
-      if (!entry) {
-        entry = { id: id }
-        cfg.plugins.push(entry)
-      }
-      entry[key] = value
-    })
+    if (!shell || typeof shell.updateEntryInline !== "function") return
+    // updateEntryInline replaces the entry wholesale, so carry the rest of
+    // the stored settings across before writing.
+    var merged = {}
+    for (var k in root.config) if (k !== "id") merged[k] = root.config[k]
+    merged[key] = value
+    if (!shell.updateEntryInline(root.pluginId, merged))
+      console.warn("navbar-cat: no plugins[] entry for " + root.pluginId + ", setting not saved")
   }
 
   CatMenu {
