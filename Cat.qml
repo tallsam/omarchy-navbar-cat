@@ -29,14 +29,19 @@ Item {
   property var manifest: null
   property string omarchyPath: ""
 
+  // Omarchy strips __sourceDir from third-party manifests, so fall back to
+  // this file's own directory.
+  readonly property string sourceDir: manifest && manifest.__sourceDir
+    ? String(manifest.__sourceDir)
+    : String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "").replace(/\/$/, "")
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "io.github.tallsam.navbar-cat"
   readonly property string assetDir: {
-    var dir = manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : ""
+    var dir = root.sourceDir
     if (dir === "") return ""
     return (dir.indexOf("file://") === 0 ? dir : "file://" + dir) + "/assets"
   }
   readonly property string helper: {
-    var dir = manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : ""
+    var dir = root.sourceDir
     if (dir === "") return ""
     return dir.replace(/^file:\/\//, "") + "/bin/navbar-cat-cursor"
   }
