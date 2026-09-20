@@ -30,16 +30,14 @@ Item {
   property string omarchyPath: ""
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "io.github.tallsam.navbar-cat"
-  readonly property string assetDir: {
+  readonly property string pluginDir: {
     var dir = manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : ""
-    if (dir === "") return ""
-    return (dir.indexOf("file://") === 0 ? dir : "file://" + dir) + "/assets"
+    if (dir !== "") return dir.indexOf("file://") === 0 ? dir : "file://" + dir
+    var self = Qt.resolvedUrl("Brain.js").toString()
+    return self.substring(0, self.lastIndexOf("/"))
   }
-  readonly property string helper: {
-    var dir = manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : ""
-    if (dir === "") return ""
-    return dir.replace(/^file:\/\//, "") + "/bin/navbar-cat-cursor"
-  }
+  readonly property string assetDir: root.pluginDir + "/assets"
+  readonly property string helper: root.pluginDir.replace(/^file:\/\//, "") + "/bin/navbar-cat-cursor"
 
   // The shell assigns `manifest` after the component is constructed, so every
   // path derived from it is empty for the first moments of life. Nothing that
