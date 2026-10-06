@@ -40,15 +40,18 @@ Item {
   // anything else wants filtering, because fractional nearest-neighbour drops
   // and doubles rows at random.
   readonly property bool crisp: cell === width
+  readonly property bool shellPose: character === "turtle" && pose === "shell"
+  readonly property string sheetCharacter: shellPose ? "turtle-shell" : character
+  readonly property int sheetFrames: shellPose ? 1 : Frames.COUNT
 
   readonly property var pattern: Frames.POSES[pose] !== undefined
     ? Frames.POSES[pose]
     : Frames.POSES["stop"]
   // Sleeping breathes at a quarter of the rate, exactly as oneko does it
   // (oneko.c:1101 shifts the tick right by two for the sleep state).
-  readonly property int frame: pose === "sleep"
+  readonly property int frame: shellPose ? 0 : (pose === "sleep"
     ? pattern[(animTick >> 2) & 1]
-    : pattern[animTick & 1]
+    : pattern[animTick & 1])
 
   // Tinting goes through `layer.effect` rather than MultiEffect's `source`
   // property. The source form needs a visible source item, so hiding the
@@ -80,8 +83,8 @@ Item {
       // "/cat32-fill.png" resolves against the filesystem root and warns.
       source: root.assetDir === ""
         ? ""
-        : root.assetDir + "/" + root.character + root.cell + "-" + sheetLayer.sheet + ".png"
-      width: root.width * Frames.COUNT
+        : root.assetDir + "/" + root.sheetCharacter + root.cell + "-" + sheetLayer.sheet + ".png"
+      width: root.width * root.sheetFrames
       height: root.height
       x: -root.frame * root.width
       smooth: !root.crisp

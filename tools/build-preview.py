@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render preview.png — the marketplace card for this plugin.
+"""Render preview.png and preview-turtle.gif from the shipped sprite sheets.
 
 Everything drawn here comes from the shipped spritesheets and is composited the
 same way the plugin composites it at runtime: the fill sheet tinted with the
@@ -106,21 +106,45 @@ def main():
                    sprite("neko", INDEX[frame], 3, TEXT, BAR))
         draw.text((x, y + 108), name, font=label, fill=MUTED)
 
-    # The three characters.
+    # The four characters.
     y = 452
-    draw.text((60, y), "three characters", font=label, fill=MUTED)
-    for i, character in enumerate(("neko", "tora", "dog")):
-        x = 60 + i * 185
+    draw.text((60, y), "four characters", font=label, fill=MUTED)
+    for i, character in enumerate(("neko", "tora", "dog", "turtle")):
+        x = 60 + i * 145
         card.paste(sprite(character, INDEX["right1"], 3, TEXT, BAR), (x, y + 34),
                    sprite(character, INDEX["right1"], 3, TEXT, BAR))
         draw.text((x, y + 142), character, font=label, fill=MUTED)
 
     draw.text((640, y + 60), "takes your theme's colours", font=body, fill=MUTED)
     draw.text((640, y + 96), "chases and is pettable", font=body, fill=MUTED)
-    draw.text((640, y + 132), "public-domain oneko sprites", font=body, fill=MUTED)
+    draw.text((640, y + 132), "oneko sprites + an original turtle", font=body, fill=MUTED)
 
     card.save(OUT)
     print(f"wrote {OUT.relative_to(REPO)} ({card.width}x{card.height})")
+    turtle_preview()
+
+
+def turtle_preview():
+    """Enlarged art preview: slow steps, a 2.4s hide, then emerging."""
+    images = []
+    for tick in range(80):
+        tucked = 40 <= tick < 64
+        walking = tick < 40
+        frame = Image.new("RGB", (640, 240), BG)
+        draw = ImageDraw.Draw(frame)
+        draw.text((28, 20), "turtle", font=font(25), fill=TEXT)
+        caption = "slow steps" if walking else "hiding in his shell" if tucked else "hello again"
+        draw.text((28, 59), caption, font=font(18), fill=MUTED)
+        draw.rectangle((0, 113, 640, 218), fill=BAR)
+        index = 0 if tucked or not walking else INDEX["right1"] + (tick // 10) % 2
+        art = sprite("turtle-shell" if tucked else "turtle", index, 3, TEXT, BAR)
+        x = 200 + min(tick, 40) * 2
+        frame.paste(art, (x, 119), art)
+        images.append(frame)
+    target = REPO / "preview-turtle.gif"
+    images[0].save(target, save_all=True, append_images=images[1:],
+                   duration=100, loop=0, optimize=False, disposal=2)
+    print(f"wrote {target.relative_to(REPO)} (enlarged sprite preview)")
 
 
 if __name__ == "__main__":

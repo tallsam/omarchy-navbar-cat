@@ -59,7 +59,8 @@ Set `rhythm: false` for a cat that behaves the same at 4am as at 4pm.
 ## Right-click menu
 
 Right-click a **settled** cat to change its character, or toggle pouncing and
-cursor-chasing. A walking cat has no input region to click, which is the same
+cursor-chasing. For the turtle, the pounce toggle becomes **hide in shell**.
+A walking cat has no input region to click, which is the same
 rule that governs petting.
 
 Menu choices are written to this plugin's own entry in `shell.json` through the
@@ -67,13 +68,22 @@ shell's own config mechanism, so they survive a restart.
 
 ## Characters
 
-Three sprite sets ship, all from oneko and all with the same 32 frames:
+Four characters ship: three from oneko and an original turtle:
 
 | `character` | |
 |---|---|
 | `neko` (default) | the original cat |
 | `tora` | tiger-striped cat — the stripes take your theme's ink colour |
 | `dog` | a dog, for people who are wrong about cats |
+| `turtle` | a slow walker who hides in his shell instead of jumping |
+
+The turtle walks at one tenth of the usual pace by default, with slower steps.
+He never runs, jumps, or bobs to music. Pet him, or let him reach your pointer,
+and he tucks into his shell for 2.4 seconds before coming back out. Set
+`hideInShell: false` to disable that reaction. An explicit `speed` setting
+overrides the default pace.
+
+![Turtle walking and hiding in his shell](preview-turtle.gif)
 
 ## Install
 
@@ -154,12 +164,13 @@ Settings go inline on the plugin's entry in `~/.config/omarchy/shell.json`:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `character` | `"neko"` | `neko`, `tora`, or `dog` |
-| `speed` | `1.0` | Multiplier on walking and running pace |
+| `character` | `"neko"` | `neko`, `tora`, `dog`, or `turtle` |
+| `speed` | `1.0` (`0.1` for turtle) | Multiplier on walking and running pace |
 | `size` | `16` | Cat height in logical pixels |
 | `pettable` | `true` | Whether the cat can be clicked |
 | `chaseCursor` | `true` | Whether the cat comes when you visit the bar |
-| `pounce` | `true` | Whether it leaps at the pointer (see below) |
+| `pounce` | `true` | Whether it leaps at the pointer (ignored by turtle) |
+| `hideInShell` | `true` | Whether the turtle hides when petted or reaching the pointer |
 | `rhythm` | `true` | Whether the cat follows a day/night rhythm |
 | `avoidCenter` | `0.2` | Fraction of the bar's middle to keep clear of the clock; `0` disables |
 | `sleepAfter` | `180` | Seconds of pointer stillness before it sleeps |
@@ -201,8 +212,9 @@ timer, and the pointer sampler slows down to match.
 | `CatMenu.qml` | The right-click menu surface |
 | `Brain.js` | All the behaviour, as a pure function — the tested part |
 | `bin/navbar-cat-cursor` | Pointer sampler |
-| `tools/build-sprites.py` | XBM → spritesheets (only needed to change the art) |
-| `tools/build-preview.py` | Renders `preview.png` from the shipped sheets |
+| `tools/build-sprites.py` | XBM and original turtle art → spritesheets (only needed to change the art) |
+| `tools/turtle_sprites.py` | Original turtle pixel art and retracted-shell pose |
+| `tools/build-preview.py` | Renders the preview card and turtle animation from the shipped sheets |
 
 `Brain.js` takes a snapshot of the world and returns what the cat should be
 doing. It holds no QML and reads no clock of its own, so the whole priority
@@ -242,6 +254,11 @@ The plugin's own code is MIT. The sprites are the **public-domain** `neko`,
 `tora`, and `dog` sets from oneko 1.2.sakura.5 — see
 [`vendor/oneko/PROVENANCE.md`](vendor/oneko/PROVENANCE.md) for the exact source
 and checksum.
+
+The turtle artwork is original to this plugin and released under the same
+MIT licence as its code. Its editable source is
+[`tools/turtle_sprites.py`](tools/turtle_sprites.py); all shipped sprite sheets
+can be regenerated with `python3 tools/build-sprites.py` (requires Pillow).
 
 oneko's tarball also ships character sets that are **not** free — the BSD
 Daemon is Marshall Kirk McKusick's, and Sakura and Tomoyo are CLAMP characters.

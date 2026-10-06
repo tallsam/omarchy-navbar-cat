@@ -38,7 +38,7 @@ var INDEX = {
   "rtogi2": 31
 }
 
-var CHARACTERS = ["dog", "neko", "tora"]
+var CHARACTERS = ["dog", "neko", "tora", "turtle"]
 
 var POSES = {
   "stop": [
