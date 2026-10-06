@@ -135,6 +135,10 @@ PanelWindow {
         label: "dog"; active: menu.cat && menu.cat.character === "dog"
         onTapped: { menu.chose("character", "dog"); menu.open = false }
       }
+      Row {
+        label: "turtle"; active: menu.cat && menu.cat.character === "turtle"
+        onTapped: { menu.chose("character", "turtle"); menu.open = false }
+      }
 
       Rectangle {
         width: Style.space(150); height: 1
@@ -142,8 +146,13 @@ PanelWindow {
       }
 
       Row {
-        label: "pounce"; active: menu.cat && menu.cat.pounce
-        onTapped: { menu.chose("pounce", !(menu.cat && menu.cat.pounce)); menu.open = false }
+        readonly property bool turtle: menu.cat && menu.cat.character === "turtle"
+        label: turtle ? "hide in shell" : "pounce"
+        active: menu.cat && (turtle ? menu.cat.hideInShell : menu.cat.pounce)
+        onTapped: {
+          menu.chose(turtle ? "hideInShell" : "pounce", !active)
+          menu.open = false
+        }
       }
       Row {
         label: "chase cursor"; active: menu.cat && menu.cat.chaseCursor

@@ -29,6 +29,7 @@ import sys
 from pathlib import Path
 
 from PIL import Image
+from turtle_sprites import turtle_frame
 
 REPO = Path(__file__).resolve().parent.parent
 VENDOR = REPO / "vendor" / "oneko"
@@ -156,13 +157,27 @@ def main():
             write_sheet(ASSETS / f"{character}16-ink.png", [halve(i) for _, i in loaded], 16),
         ]
 
+    # Original artwork: draw both sizes directly so the small turtle remains
+    # legible and never depends on files in the vendored oneko source.
+    for size in (16, 32):
+        loaded = [turtle_frame(name, size) for name in FRAMES]
+        written += [
+            write_sheet(ASSETS / f"turtle{size}-fill.png", [m for m, _ in loaded], size),
+            write_sheet(ASSETS / f"turtle{size}-ink.png", [i for _, i in loaded], size),
+        ]
+        mask, ink = turtle_frame("shell", size)
+        written += [
+            write_sheet(ASSETS / f"turtle-shell{size}-fill.png", [mask], size),
+            write_sheet(ASSETS / f"turtle-shell{size}-ink.png", [ink], size),
+        ]
+
     # The frame/pose tables are generated rather than hand-maintained so the
     # sheet and the QML can never disagree about what frame 17 is.
     table = {
         "cell": SIZE,
         "count": len(FRAMES),
         "index": {name: i for i, name in enumerate(FRAMES)},
-        "characters": sorted(CHARACTERS),
+        "characters": sorted([*CHARACTERS, "turtle"]),
         "poses": {
             pose: [FRAMES.index(a), FRAMES.index(b)] for pose, (a, b) in POSES.items()
         },

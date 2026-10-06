@@ -24,12 +24,15 @@ SOFTWARE.
 
 EXTERNAL DEPENDENCIES AND BUNDLED CONTENT
 
-Sprites — the artwork in assets/ and vendor/oneko/ is NOT covered by the MIT
-licence above. It is the public-domain `neko`, `tora`, and `dog` artwork from
+oneko sprites — the `neko`, `tora`, and `dog` artwork in assets/ and
+vendor/oneko/ is NOT covered by the MIT licence above. It is public-domain artwork from
 oneko 1.2.sakura.5 by Masayuki Koba, modified by Tatsuya Kato, redistributed
 under the Public Domain declaration of that package. The oneko sets whose
 rights are reserved (bsd, sakura, tomoyo) are NOT included here. Full source,
 checksum, and reasoning: vendor/oneko/PROVENANCE.md.
+
+Turtle sprites — the original `turtle` and `turtle-shell` artwork in assets/
+and its source in tools/turtle_sprites.py are covered by the MIT licence above.
 
 Runtime — this plugin requires only Omarchy 4 and python3, both already
 present on an Omarchy system. It bundles and runs one helper of its own,

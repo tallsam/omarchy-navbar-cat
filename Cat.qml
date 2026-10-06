@@ -62,7 +62,8 @@ Item {
     return ({})
   }
 
-  readonly property real speed: Number(config.speed) > 0 ? Number(config.speed) : 1.0
+  readonly property real speed: Number(config.speed) > 0 ? Number(config.speed)
+    : (character === "turtle" ? 0.1 : 1.0)
   readonly property bool pettable: config.pettable !== false
   readonly property bool chaseCursor: config.chaseCursor !== false
   readonly property int sleepAfter: Number(config.sleepAfter) > 0 ? Number(config.sleepAfter) : 180
@@ -76,7 +77,8 @@ Item {
     return Frames.CHARACTERS.indexOf(wanted) !== -1 ? wanted : "neko"
   }
 
-  readonly property bool pounce: config.pounce !== false
+  readonly property bool pounce: character !== "turtle" && config.pounce !== false
+  readonly property bool hideInShell: character === "turtle" && config.hideInShell !== false
   // Fraction of the bar to keep clear when the cat picks its own spot. Omarchy
   // centres the clock, so the middle is the one place reliably occupied.
   readonly property real avoidCenter: config.avoidCenter !== undefined
@@ -306,7 +308,7 @@ Item {
     id: animator
     // oneko alternates its two frames far slower than the movement updates;
     // matching that keeps the walk cycle looking hand-drawn rather than frantic.
-    interval: 150
+    interval: root.character === "turtle" ? 1000 : 150
     repeat: true
     running: ticker.running
     onTriggered: root.animTick = (root.animTick + 1) & 0xff
@@ -349,6 +351,8 @@ Item {
       themeChangedAt: themeChangedAt >= 0 ? themeChangedAt : null,
       hour: new Date().getHours(),
       config: {
+        character: character,
+        hideInShell: hideInShell,
         chaseCursor: chaseCursor,
         pettable: pettable,
         sleepAfter: sleepAfter,
@@ -385,7 +389,7 @@ Item {
     catPose = decision.pose
     catBob = decision.bob
     catLift = decision.lift
-    catSettled = decision.gait === "idle"
+    catSettled = decision.gait === "idle" && decision.pose !== "shell"
 
     // Let a stale scamper expire so it cannot re-fire.
     if (workspaceEvent && now - workspaceEvent.at > 4000) workspaceEvent = null

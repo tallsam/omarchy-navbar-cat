@@ -33,6 +33,8 @@ var POUNCE_MS = 600
 var POUNCE_COOLDOWN_MS = 6000
 // How far along the bar a pounce carries the cat.
 var POUNCE_REACH = 14
+// A turtle hides briefly in its shell, then peeks out again.
+var SHELL_HIDE_MS = 2400
 // How long the cat keeps looking after the last toast has gone. Its attention
 // otherwise lasts exactly as long as the toast is on screen, because toasts do
 // not all last the same time — a critical one stays until dismissed, and a cat
@@ -72,6 +74,9 @@ function freshState(seed) {
     pounceStartedAt: null,
     pounceFrom: 0,
     lastPounceAt: null,
+    hideStartedAt: null,
+    lastHideAt: null,
+    lastHidePetAt: null,
   }
 }
 
@@ -360,7 +365,11 @@ function decide(input, state) {
   var edge = input.edge || (vertical ? "left" : "top")
   var now = input.now
 
+  var config = input.config || {}
+  var turtle = config.character === "turtle"
   var want = intent(input, state)
+  // All turtle movement stays at a stroll, including dawn/dusk and startles.
+  if (turtle && want.gait === "run") want.gait = "walk"
   var rawTarget = want.target
   var target = clamp(rawTarget, 0, maxX)
   var delta = target - input.x
@@ -368,9 +377,41 @@ function decide(input, state) {
 
   // Reaching the pointer is the cue to pounce at it. Anything else the cat is
   // doing takes priority, and the cooldown keeps it from turning into a tic.
-  var config = input.config || {}
+  if (turtle) state.pounceStartedAt = null
+
+  if (!turtle || config.hideInShell === false) {
+    state.hideStartedAt = null
+  } else {
+    var newPet = want.reason === "petted" && config.pettable !== false
+      && input.pettedAt !== state.lastHidePetAt
+    var reachedPointer = want.reason === "chase" && !moving
+      && (state.lastHideAt === null || state.lastHideAt === undefined
+          || now - state.lastHideAt >= POUNCE_COOLDOWN_MS)
+    if ((state.hideStartedAt === null || state.hideStartedAt === undefined)
+        && (newPet || reachedPointer)) {
+      state.hideStartedAt = now
+      if (newPet) state.lastHidePetAt = input.pettedAt
+      state.nextStirAt = null
+      state.stirUntil = null
+      state.wokeAt = null
+    }
+    if (state.hideStartedAt !== null && state.hideStartedAt !== undefined) {
+      var hideElapsed = now - state.hideStartedAt
+      if (hideElapsed < SHELL_HIDE_MS) {
+        state.pose = "shell"
+        return {
+          reason: "shell-hide", target: input.x, gait: "idle", pose: "shell",
+          lift: 0, snap: false, bob: false,
+          pettable: false, idle: false, wakeIn: 0, state: state,
+        }
+      }
+      state.hideStartedAt = null
+      state.lastHideAt = now
+    }
+  }
+
   var pouncing = state.pounceStartedAt !== null && state.pounceStartedAt !== undefined
-  if (!pouncing && config.pounce !== false && want.reason === "chase" && !moving
+  if (!turtle && !pouncing && config.pounce !== false && want.reason === "chase" && !moving
       && (state.lastPounceAt === null || state.lastPounceAt === undefined
           || now - state.lastPounceAt >= POUNCE_COOLDOWN_MS)) {
     state.pounceStartedAt = now
@@ -496,7 +537,7 @@ function decide(input, state) {
     pose: pose,
     lift: 0,
     snap: false,
-    bob: want.bob === true,
+    bob: !turtle && want.bob === true,
     pettable: config.pettable !== false,
     idle: pose === "sleep",
     // How long the body may stop ticking for. Only meaningful while asleep.

@@ -15,7 +15,7 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = readFileSync(join(REPO, "Brain.js"), "utf8");
 const Brain = new Function(
   `${source}\nreturn { decide, freshState, pickSpot, CHAIN, PET_MS, PET_PERK_MS,`
-    + ` AWAKE_MS, SCAMPER_MS, POUNCE_MS, POUNCE_COOLDOWN_MS, NOTIFY_MS, rhythmFor };`,
+    + ` AWAKE_MS, SCAMPER_MS, POUNCE_MS, POUNCE_COOLDOWN_MS, SHELL_HIDE_MS, NOTIFY_MS, rhythmFor };`,
 )();
 
 // The middle of the bar, in cat-position terms, and the default keep-clear
@@ -525,6 +525,154 @@ test("stir: waking for a real reason clears the stir schedule", () => {
 });
 
 // ------------------------------------------------------------------- pouncing
+
+// Coverage audit: Value: protects=turtles stay at a walk across every movement trigger;
+// fails_when=new reactions bypass the turtle's walking pace;
+// why_new=pointer and workspace cases do not exercise theme, toast, rhythm or stir; seam=none
+test("turtle: every movement reaction stays at a walk", () => {
+  for (const [reason, stimulus] of [
+    ["chase", { pointer: { onBar: true, pos: 900 } }],
+    ["workspace", { workspaceEvent: { at: 10_000, dir: 1 } }],
+    ["theme", { themeChangedAt: 10_000 }],
+    ["notification", { notifyAt: 10_000 }],
+    ["notification", { notifying: true, notifyAt: 0 }],
+    ["wander", { hour: 7 }],
+    ["wander", { hour: 18 }],
+    ["wander", { hour: 12 }],
+  ]) {
+    const out = decide({ ...stimulus, config: { character: "turtle" } });
+    assert.equal(out.reason, reason);
+    assert.equal(out.gait, "walk", `${reason} must not make the turtle run`);
+    assert.equal(out.lift, 0);
+  }
+
+  for (const hour of [7, 18]) {
+    const config = { character: "turtle" };
+    const { out: asleep, asleepAt } = sleepingCat({ hour, config });
+    const wakeAt = asleepAt + asleep.wakeIn;
+    const waking = decide({ hour, config, now: wakeAt, x: asleep.target,
+      lastPointerMoveAt: 10_000 }, asleep.state);
+    assert.equal(waking.reason, "stir");
+    const moving = decide({ hour, config, now: wakeAt + Brain.AWAKE_MS,
+      x: asleep.target, lastPointerMoveAt: 10_000 }, waking.state);
+    assert.equal(moving.reason, "stir");
+    assert.equal(moving.gait, "walk", `${hour}: self-waking must not cause a run`);
+  }
+});
+
+// Coverage audit: Value: protects=a turtle stays stationary throughout hiding and can hide again after its cooldown;
+// fails_when=vertical bars, incoming events or cooldown boundaries disrupt hiding;
+// why_new=the existing timing loop omits actual vertical axes and cooldown expiry; seam=none
+test("turtle: catching the pointer tucks and hides in place, then emerges", () => {
+  const setup = {
+    x: 492, pointer: { onBar: true, pos: 500 },
+    config: { character: "turtle", pounce: false },
+  };
+  for (const [edge, axis] of [["top", "h"], ["bottom", "h"], ["left", "v"], ["right", "v"]]) {
+    let state = Brain.freshState();
+    for (const elapsed of [0, 300, 600, 1200, 1800, 2100, 2399]) {
+      const out = decide({ ...setup, edge, axis, now: 10_000 + elapsed }, state);
+      state = out.state;
+      assert.equal(out.reason, "shell-hide");
+      assert.equal(out.pose, "shell");
+      assert.equal(out.target, 492, "hiding must not move along the bar");
+      assert.equal(out.lift, 0, "turtle must not jump on any bar edge");
+      assert.equal(out.bob, false);
+      assert.equal(out.pettable, false);
+      assert.equal(out.idle, false, "keep ticking until hiding finishes");
+    }
+    const emerged = decide({ ...setup, now: 10_000 + Brain.SHELL_HIDE_MS }, state);
+    assert.equal(emerged.pose, "stop");
+    const waiting = decide({ ...setup, now: 13_000 }, emerged.state);
+    assert.notEqual(waiting.reason, "shell-hide", "pointer hiding has a cooldown");
+    const again = decide({ ...setup, edge, axis,
+      now: 10_000 + Brain.SHELL_HIDE_MS + Brain.POUNCE_COOLDOWN_MS }, waiting.state);
+    assert.equal(again.reason, "shell-hide", "a stationary pointer can prompt a later hide");
+  }
+
+  for (const stimulus of [
+    { pointer: { onBar: true, pos: 800 } },
+    { workspaceEvent: { at: 11_000, dir: 1 } },
+    { themeChangedAt: 11_000 },
+    { notifying: true },
+    { music: true },
+  ]) {
+    const start = decide(setup);
+    const hidden = decide({ ...setup, pointer: null, ...stimulus, now: 11_000 }, start.state);
+    assert.equal(hidden.pose, "shell", "new activity must not drag a hiding turtle away");
+    assert.equal(hidden.target, setup.x);
+    assert.equal(hidden.lift, 0);
+    const emerged = decide({ ...setup, pointer: null, ...stimulus,
+      now: 10_000 + Brain.SHELL_HIDE_MS }, hidden.state);
+    assert.notEqual(emerged.pose, "shell", "activity must not extend the hiding duration");
+  }
+});
+
+// Coverage audit: Value: protects=petting triggers one hide only when petting is enabled;
+// fails_when=disabled petting still hides or a persistent pet timestamp retriggers hiding;
+// why_new=the existing pet sequence lacks the disabled-petting boundary; seam=none
+test("turtle: one pet triggers one hide, including while asleep", () => {
+  const setup = { config: { character: "turtle" }, pettedAt: 10_000 };
+  const state = Brain.freshState();
+  state.pose = "sleep";
+  state.nextStirAt = 50_000;
+  const start = decide(setup, state);
+  assert.equal(start.reason, "shell-hide");
+  assert.equal(start.state.nextStirAt, null);
+  const finished = decide({ ...setup, now: 12_500 }, start.state);
+  assert.notEqual(finished.reason, "shell-hide");
+  const samePet = decide({ ...setup, now: 13_000 }, finished.state);
+  assert.notEqual(samePet.reason, "shell-hide");
+  const nextPet = decide({ ...setup, now: 13_100, pettedAt: 13_100 }, samePet.state);
+  assert.equal(nextPet.reason, "shell-hide");
+  const disabled = decide({ ...setup, config: { character: "turtle", pettable: false } });
+  assert.notEqual(disabled.pose, "shell", "disabling petting suppresses the hide response");
+});
+
+// Coverage audit: Value: protects=hide settings take effect immediately while turtles remain grounded;
+// fails_when=disabled hiding starts anyway or enabling hiding cannot restore the response;
+// why_new=the existing cancellation case lacks disabled-at-start and re-enabled settings; seam=none
+test("turtle: disabling hideInShell cancels animation and never enables jumping", () => {
+  const setup = { x: 492, pointer: { onBar: true, pos: 500 } };
+  const start = decide({ ...setup, config: { character: "turtle" } });
+  const stopped = decide({ ...setup, now: 10_500,
+    config: { character: "turtle", hideInShell: false, pounce: true } }, start.state);
+  assert.equal(stopped.lift, 0);
+  assert.notEqual(stopped.pose, "shell");
+  assert.notEqual(stopped.reason, "pounce");
+  assert.equal(stopped.state.hideStartedAt, null);
+  const disabled = decide({ ...setup,
+    config: { character: "turtle", hideInShell: false, pounce: true } });
+  assert.notEqual(disabled.pose, "shell");
+  assert.equal(disabled.lift, 0);
+  const enabled = decide({ ...setup, now: 11_000,
+    config: { character: "turtle", hideInShell: true } }, stopped.state);
+  assert.equal(enabled.pose, "shell");
+  const noChase = decide({ ...setup,
+    config: { character: "turtle", chaseCursor: false } });
+  assert.notEqual(noChase.pose, "shell", "disabled cursor chasing must not trigger a hide");
+});
+
+// Coverage audit: Value: protects=changing character clears incompatible animations without changing other pets;
+// fails_when=a shell pose leaks into another character or turtle restrictions affect cats and dogs;
+// why_new=the existing test covers only switching from a cat to a turtle; seam=none
+test("turtle: changing from a leaping cat cancels the leap; music stays grounded", () => {
+  const leaping = decide({ x: 492, pointer: { onBar: true, pos: 500 } });
+  assert.equal(leaping.reason, "pounce");
+  const turtle = decide({ now: 10_300, music: true,
+    config: { character: "turtle" } }, leaping.state);
+  assert.equal(turtle.lift, 0);
+  assert.equal(turtle.bob, false);
+  assert.equal(turtle.state.pounceStartedAt, null);
+  for (const character of ["neko", "tora", "dog"]) {
+    const hidden = decide({ pettedAt: 10_000, config: { character: "turtle" } });
+    const switched = decide({ now: 10_300, music: true, config: { character } }, hidden.state);
+    assert.notEqual(switched.pose, "shell", `${character} must emerge immediately`);
+    assert.equal(switched.bob, true, `${character} must still dance to music`);
+    const chasing = decide({ pointer: { onBar: true, pos: 900 }, config: { character } });
+    assert.equal(chasing.gait, "run", `${character} must retain its running pace`);
+  }
+});
 
 test("pounce: catching up with the pointer triggers a pounce", () => {
   const settled = decide({ pointer: { onBar: true, pos: 500 }, x: 300 });
