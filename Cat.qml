@@ -50,16 +50,39 @@ Item {
 
   // ---------------------------------------------------------------- config
 
-  // Settings live inline on this plugin's entry in shell.json's `plugins[]`,
-  // per the shell's storage rules.
-  readonly property var config: {
-    var settings = shell && shell.shellConfig ? shell.shellConfig.plugins : null
-    if (Array.isArray(settings)) {
-      for (var i = 0; i < settings.length; i++) {
-        if (settings[i] && String(settings[i].id || "") === root.pluginId) return settings[i]
+  // Settings live inline on this plugin's entry in shell.json's `plugins[]`.
+  // Third-party plugins no longer receive `shell.shellConfig` (PluginShellApi
+  // is scoped), and their `mutateShellConfig` only mutates `bar` — so we watch
+  // shell.json ourselves and persist with `updateEntryInline`.
+  property var config: ({})
+
+  FileView {
+    id: shellConfigFile
+    path: (Quickshell.env("HOME") || "") + "/.config/omarchy/shell.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.reloadConfig(text())
+    onFileChanged: reload()
+    onLoadFailed: root.config = ({})
+  }
+
+  function reloadConfig(raw) {
+    var next = ({})
+    try {
+      var parsed = JSON.parse(String(raw || ""))
+      var settings = parsed && Array.isArray(parsed.plugins) ? parsed.plugins : null
+      if (settings) {
+        for (var i = 0; i < settings.length; i++) {
+          if (settings[i] && String(settings[i].id || "") === root.pluginId) {
+            next = settings[i]
+            break
+          }
+        }
       }
+    } catch (e) {
+      next = ({})
     }
-    return ({})
+    root.config = next
   }
 
   readonly property real speed: Number(config.speed) > 0 ? Number(config.speed) : 1.0
@@ -427,27 +450,41 @@ Item {
 
   // ------------------------------------------------------------- settings
 
-  // The menu is the one thing here that writes. It touches only this plugin's
-  // own entry in shell.json, only when you pick something, and it goes through
-  // the shell's own mutator rather than editing the file behind its back.
+  // The menu is the one thing here that writes. Prefer updateEntryInline —
+  // third-party mutateShellConfig is bar-scoped and cannot persist plugins[].
   function setSetting(key, value) {
-    if (!shell || typeof shell.mutateShellConfig !== "function") return
+    if (!shell) return
     var id = root.pluginId
-    shell.mutateShellConfig(function (cfg) {
-      if (!Array.isArray(cfg.plugins)) cfg.plugins = []
-      var entry = null
-      for (var i = 0; i < cfg.plugins.length; i++) {
-        if (cfg.plugins[i] && String(cfg.plugins[i].id || "") === id) {
-          entry = cfg.plugins[i]
-          break
+    var next = { id: id }
+    var cur = root.config && typeof root.config === "object" ? root.config : ({})
+    for (var k in cur) {
+      if (k === "id") continue
+      next[k] = cur[k]
+    }
+    next[key] = value
+    root.config = next
+    if (typeof shell.updateEntryInline === "function") {
+      shell.updateEntryInline(id, next)
+      return
+    }
+    // Fallback for older shells that still expose a full mutator.
+    if (typeof shell.mutateShellConfig === "function") {
+      shell.mutateShellConfig(function (cfg) {
+        if (!Array.isArray(cfg.plugins)) cfg.plugins = []
+        var entry = null
+        for (var i = 0; i < cfg.plugins.length; i++) {
+          if (cfg.plugins[i] && String(cfg.plugins[i].id || "") === id) {
+            entry = cfg.plugins[i]
+            break
+          }
         }
-      }
-      if (!entry) {
-        entry = { id: id }
-        cfg.plugins.push(entry)
-      }
-      entry[key] = value
-    })
+        if (!entry) {
+          entry = { id: id }
+          cfg.plugins.push(entry)
+        }
+        entry[key] = value
+      })
+    }
   }
 
   CatMenu {
